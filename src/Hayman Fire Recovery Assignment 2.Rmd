@@ -1,7 +1,7 @@
 ---
 title: "Hayman Fire Recovery"
-author: "Matthew Ross"
-date: "10/3/2019"
+author: "Bri Rick"
+date: "1/31/2021"
 output: html_document
 ---
 
@@ -23,12 +23,10 @@ knitr::opts_knit$set(root.dir='..')
 #Reading in files
 files <- list.files('data',full.names=T)
 
-
 #Read in individual data files
 ndmi <- read_csv(files[1]) %>% 
   rename(burned=2,unburned=3) %>%
   mutate(data='ndmi')
-
 
 ndsi <- read_csv(files[2]) %>% 
   rename(burned=2,unburned=3) %>%
@@ -43,47 +41,171 @@ full_long <- rbind(ndvi,ndmi,ndsi) %>%
   gather(key='site',value='value',-DateTime,-data) %>%
   filter(!is.na(value))
 
-
 ```
 
 
 
 
-## Question 1) 
+## Question 1 
 
-What is the correlation between NDVI and NDMI? - here I want you to
+Q: What is the correlation between NDVI and NDMI? - here I want you to
 convert the full_long dataset in to a wide dataset using the 
 function "spread" and then make a plot that shows the correlation s a
 function of if the site was burned or not (x axis should be ndmi)
 You should exclude winter months and focus on summer months
 
+*A: NDMI and NDVI are positively correlated, meaning that with higher NDMI there is higher NDVI.* 
+
+```{r, warning=F,message=F}
+#Convert from logn to wide dataset, exclude winter months
+full_wide <- full_long %>% spread(key="data", value = "value") %>% 
+  mutate(month = month(DateTime))%>%
+  filter(!is.na(ndvi),
+         !is.na(ndsi),
+         !is.na(ndmi))
+
+full_wide_summer <- full_wide %>% 
+  filter(month %in% c(5, 6, 7, 8, 9))
+
+#Plot NDMI vs NDVI colored by site type
+ggplot(full_wide_summer, aes(x = ndmi, y = ndvi, color = site))+
+  geom_point() +
+  theme_bw()+
+  xlab("NDMI")+
+  ylab("NDVI")+
+  theme(legend.position = c(0.9, 0.8))
+```
 
 
 ## Question 2 
 
-2) What is the correlation between average NDSI (normalized
+Q: What is the correlation between average NDSI (normalized
  snow index) for January - April and average NDVI for June-August?
 In other words, does the previous year's snow cover influence vegetation
  growth for the following summer?
+ 
+*A: There doesn't appear to be a correlation between average NDSI of the previous winter and average NDVI of the following summer.*
+
+```{r, warning=F,message=F}
+#Calculate average NDVI for summer months
+ndvi_summer <- full_wide %>% 
+  mutate(year=year(DateTime)) %>%
+  filter(month %in% c(6, 7, 8)) %>% 
+  group_by(year) %>%
+  summarize(mean_NDVI=mean(ndvi))
+
+#Calculate average NDSI for winter months
+ndsi_winter <- full_wide %>% 
+  mutate(year=year(DateTime)) %>%
+  filter(month %in% c(1, 2, 3, 4)) %>% 
+  group_by(year) %>%
+  summarize(mean_NDSI=mean(ndsi))
+  
+#Join NDVI and NDSI data together
+ndvi_ndsi_avg <- inner_join(ndvi_summer, ndsi_winter, by = c("year"))
+
+#Plot NDVI vs NDSI to look at correlation
+ggplot(ndvi_ndsi_avg, aes(x = mean_NDVI, y = mean_NDSI, color = year))+
+  geom_point()+
+  xlab("Mean NDVI")+
+  ylab("Mean NDSI")+
+  theme_bw()+
+  theme(legend.position = c(0.07, 0.2))
+```
 
 
-## Q3
+## Question 3
 
-How is the snow effect from question 2 different between pre- and post-burn
+Q: How is the snow effect from question 2 different between pre- and post-burn
 and burned and unburned? 
+
+A: 
+
+```{r, warning=F,message=F}
+#Calculate average NDVI for summer months separated by site type
+ndvi_summer_site <- full_wide %>% 
+  mutate(year=year(DateTime)) %>%
+  filter(month %in% c(6, 7, 8)) %>% 
+  group_by(year, site) %>%
+  summarize(mean_NDVI=mean(ndvi))
+
+#Calculate average NDSI for winter months separated by site type
+ndsi_winter_site <- full_wide %>% 
+  mutate(year=year(DateTime)) %>%
+  filter(month %in% c(1, 2, 3, 4)) %>% 
+  group_by(year, site) %>%
+  summarize(mean_NDSI=mean(ndsi))
+  
+#Join NDVI and NDSI data together by year and site type
+ndvi_ndsi_avg_site <- inner_join(ndvi_summer_site, ndsi_winter_site, by = c("year", "site"))
+
+#Plot NDVI vs NDSI coloring by site type
+ggplot(ndvi_ndsi_avg_site, aes(x = mean_NDVI, y = mean_NDSI, color = site))+
+  geom_point()+
+  xlab("Mean NDVI") +
+  ylab("Mean NDSI")+
+  theme_bw()+
+  theme(legend.position = c(0.1, 0.85))
+```
 
 
 ## Question 4
 
-What month is the greenest month on average? 
+Q: What month is the greenest month on average? 
 
+*A: The greenest month on average considering the burned and unburned sites together is August, however, looking at just the unburned site the greenest month on average is September. The burned site is greenest in August.*
+
+```{r, warning=F,message=F}
+#Calculate mean NDVI per month, per site type
+ndvi_monthly_site <- full_wide %>% 
+  group_by(site,month) %>%
+  summarize(mean_NDVI=mean(ndvi))
+
+#Calculate mean NDVI per month
+ndvi_monthly <- full_wide %>% 
+  group_by(month) %>%
+  summarize(mean_NDVI=mean(ndvi))
+
+#Plot average NDVI per month
+ggplot()+
+  geom_point(aes(x = month, y = mean_NDVI, color = site), data = ndvi_monthly_site) +
+  geom_point(aes(x = month, y = mean_NDVI), data = ndvi_monthly) +
+  xlab("Month")+
+  ylab("Mean NDVI")+
+  scale_x_continuous(breaks = seq(from = 1, to = 12, by = 1))+
+  theme_bw() +
+  theme(legend.position = c(0.1, 0.85))
+```
 
 
 
 ## Question 5) 
 
-What month is the snowiest on average?
+Q: What month is the snowiest on average?
 
+*A: The snowiest month when considering all sites together is January. Considering only unburned sites, the snowiest month is February. January is the snowiest month for burned sites.*
+
+```{r, warning=F,message=F}
+#Calculate mean NDSI per month, per site type
+ndsi_monthly_site <- full_wide %>% 
+  group_by(site,month) %>%
+  summarize(mean_NDSI=mean(ndsi))
+
+#Calculate mean NDSI per month
+ndsi_monthly <- full_wide %>% 
+  group_by(month) %>%
+  summarize(mean_NDSI=mean(ndsi))
+
+#Plot mean NDSI per month
+ggplot()+
+  geom_point(aes(x = month, y = mean_NDSI, color = site), data = ndsi_monthly_site) +
+  geom_point(aes(x = month, y = mean_NDSI), data = ndsi_monthly) +
+  xlab("Month")+
+  ylab("Mean NDSI")+
+  scale_x_continuous(breaks = seq(from = 1, to = 12, by = 1))+
+  theme_bw() +
+  theme(legend.position = c(0.1, 0.15))
+```
 
 ## Bonus Question: Redo all problems with `spread` and `gather` using modern tidyverse syntax. 
 
